@@ -39,10 +39,10 @@ class SlurmStatExtractor(StatExtractor):
                 line = line.strip()
                 if not line or line.startswith("#"):
                     continue
-                # Use regex to parse the line - squeue output has variable whitespace
-                # Format: JOBID PARTITION NAME USER STATE TIME TIME_LIMIT NODES NODELIST
+                # Only parse actual job lines: they start with digits (JOBID column)
+                # Skip scontrol/sinfo lines (start with NodeName=, PARTITION, etc.)
                 parts = re.split(r'\s+', line)
-                if len(parts) >= 5:
+                if len(parts) >= 5 and parts[0].isdigit():
                     qstat_values = dict()
                     qstat_values["JobId"] = parts[0]                # JOBID
                     qstat_values["Queue"] = self.anonymize(parts[1], "qs")   # PARTITION
@@ -50,6 +50,38 @@ class SlurmStatExtractor(StatExtractor):
                     qstat_values["UnixAccount"] = self.anonymize(parts[3], "users")  # USER
                     qstat_values["S"] = self._map_state(parts[4])   # STATE
                     all_values.append(qstat_values)
+        return all_values
+
+    def extract_sacct(self, orig_file):
+        """
+        reads sacct output file and parses job accounting information.
+        Standard sacct output columns:
+        JobID JobName Partition Account AllocCPUS State ExitCode
+        Returns a list of dicts with keys: JobId, JobName, Partition, State, ExitCode
+        """
+        try:
+            fileutils.check_empty_file(orig_file)
+        except fileutils.FileEmptyError:
+            logging.error("File %s seems to be empty." % orig_file)
+            return []
+
+        all_values = []
+        with open(orig_file, "r") as fin:
+            header = fin.readline().strip()
+            for line in fin:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = re.split(r'\s+', line)
+                # sacct lines with JobID starting with a number (skip .batch, .extern etc.)
+                if len(parts) >= 6 and parts[0].isdigit():
+                    sacct_values = dict()
+                    sacct_values["JobId"] = parts[0]
+                    sacct_values["JobName"] = parts[1]
+                    sacct_values["Partition"] = self.anonymize(parts[2], "qs")
+                    sacct_values["State"] = self._map_state(parts[5])
+                    sacct_values["ExitCode"] = parts[6] if len(parts) > 6 else "0:0"
+                    all_values.append(sacct_values)
         return all_values
 
     @staticmethod
