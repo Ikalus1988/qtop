@@ -14,6 +14,44 @@ from qtop_py.serialiser import StatExtractor, GenericBatchSystem
 import qtop_py.fileutils as fileutils
 
 
+def expand_slurm_nodelist(nodelist):
+    """
+    Expand Slurm compact node list notation to individual node names.
+
+    Examples:
+      'wn001'              -> ['wn001']
+      'wn[001-003]'        -> ['wn001', 'wn002', 'wn003']
+      'wn[001-003,005]'    -> ['wn001', 'wn002', 'wn003', 'wn005']
+      'wn[001,003,005-007]'-> ['wn001', 'wn003', 'wn005', 'wn006', 'wn007']
+      '(Priority)'         -> []
+      '(Resources)'        -> []
+    """
+    if not nodelist or nodelist.startswith("("):
+        return []
+
+    m = re.match(r"^([\w.-]+)\[(.+)\]$", nodelist)
+    if not m:
+        # Single node or comma-separated list without bracket ranges
+        return [n.strip() for n in nodelist.split(",") if n.strip()]
+
+    prefix = m.group(1)
+    range_str = m.group(2)
+
+    nodes = []
+    for part in range_str.split(","):
+        part = part.strip()
+        if "-" in part:
+            start_str, end_str = part.split("-", 1)
+            width = len(start_str)
+            start, end = int(start_str), int(end_str)
+            for i in range(start, end + 1):
+                nodes.append("%s%s" % (prefix, str(i).zfill(width)))
+        else:
+            nodes.append("%s%s" % (prefix, part))
+
+    return nodes
+
+
 class SlurmStatExtractor(StatExtractor):
     def __init__(self, config, options):
         StatExtractor.__init__(self, config, options)
@@ -23,7 +61,7 @@ class SlurmStatExtractor(StatExtractor):
         reads squeue output file and parses job information.
         Standard squeue output columns:
         JOBID PARTITION NAME USER STATE TIME TIME_LIMIT NODES NODELIST(REASON)
-        Returns a list of dicts with keys: JobId, UnixAccount, S, Queue, JobName
+        Returns a list of dicts with keys: JobId, UnixAccount, S, Queue, JobName, NodeList
         """
         try:
             fileutils.check_empty_file(orig_file)
@@ -49,6 +87,7 @@ class SlurmStatExtractor(StatExtractor):
                     qstat_values["JobName"] = parts[2]               # NAME
                     qstat_values["UnixAccount"] = self.anonymize(parts[3], "users")  # USER
                     qstat_values["S"] = self._map_state(parts[4])   # STATE
+                    qstat_values["NodeList"] = parts[-1] if len(parts) >= 6 else ""  # NODELIST(REASON)
                     all_values.append(qstat_values)
         return all_values
 

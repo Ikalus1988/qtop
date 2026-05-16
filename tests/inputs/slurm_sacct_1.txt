@@ -1,0 +1,8 @@
+      JobID    JobName  Partition    Account  AllocCPUS     State ExitCode
+--------------------------------------------------------------------------------
+      12345       bash      batch   analytics          2  RUNNING      0:0
+      12346    python      batch   analytics          4  RUNNING      0:0
+      12347  mpi_job      batch      hpc_user          8  RUNNING      0:0
+      12348 shortjob      debug  interactive          1    PENDING      0:0
+      12345.0    batch      batch   analytics          2  COMPLETED      0:0
+      12346.0    batch      batch   analytics          4  COMPLETED      0:0

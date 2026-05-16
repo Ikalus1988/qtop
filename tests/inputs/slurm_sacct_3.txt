@@ -1,0 +1,12 @@
+      JobID    JobName  Partition    Account  AllocCPUS       State ExitCode
+--------------------------------------------------------------------------------
+     100001  nwchem    compchem   chem_lab          8  RUNNING      0:0
+     100002  namd2    biomolec   bio_lab          16  RUNNING      0:0
+     100003  gromacs    biomolec   bio_lab           8  SUSPENDED      0:0
+     100004  amber    compchem   chem_lab           4  CANCELLED      0:0
+     100005  lammps    compphys   phys_lab          12  COMPLETING      0:0
+     100006  quantum    compchem   chem_lab           2  PENDING      0:0
+     100001.0    batch    compchem   chem_lab           8  COMPLETED      0:0
+     100002.0    batch    biomolec   bio_lab          16    TIMEOUT     124:0
+     100003.0    batch    biomolec   bio_lab           8  COMPLETED      0:0
+     100005.0    batch    compphys   phys_lab          12  NODE_FAIL     137:0

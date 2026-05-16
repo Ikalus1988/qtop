@@ -397,3 +397,103 @@ class TestSlurmIntegration:
         # All names should be anonymized (contain '_anon_')
         for name in usernames + queue_names:
             assert "_anon_" in name
+
+
+class TestSlurmSacctExtractor:
+    """Tests for sacct parsing in SlurmStatExtractor."""
+
+    def test_extract_sacct_basic(self):
+        """Test basic sacct file parsing."""
+        config = make_config()
+        options = make_options(ANONYMIZE=False)
+        extractor = slurm.SlurmStatExtractor(config, options)
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+            f.write("""      JobID    JobName  Partition    Account  AllocCPUS     State ExitCode
+--------------------------------------------------------------------------------
+      12345       bash      batch   analytics          2  RUNNING      0:0
+      12346    python      batch   analytics          4  RUNNING      0:0
+      12347  mpi_job      batch      hpc_user          8  RUNNING      0:0
+      12348 shortjob      debug  interactive          1    PENDING      0:0
+      12345.0    batch      batch   analytics          2  COMPLETED      0:0
+""")
+            fname = f.name
+
+        try:
+            result = extractor.extract_sacct(fname)
+            assert len(result) == 4  # 4 main jobs, skip .batch step
+            assert result[0]["JobId"] == "12345"
+            assert result[0]["JobName"] == "bash"
+            assert result[0]["State"] == "R"
+            assert result[1]["JobId"] == "12346"
+            assert result[2]["JobId"] == "12347"
+            assert result[3]["JobId"] == "12348"
+            assert result[3]["State"] == "Q"  # PENDING -> Q
+        finally:
+            os.unlink(fname)
+
+    def test_extract_sacct_with_exit_codes(self):
+        """Test sacct parsing captures exit codes."""
+        config = make_config()
+        options = make_options(ANONYMIZE=False)
+        extractor = slurm.SlurmStatExtractor(config, options)
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+            f.write("""      JobID    JobName  Partition    Account  AllocCPUS     State ExitCode
+--------------------------------------------------------------------------------
+     100001  nwchem    compchem   chem_lab          8  RUNNING      0:0
+     100002  namd2    biomolec   bio_lab          16  RUNNING      0:0
+     100001.0    batch    compchem   chem_lab           8  COMPLETED      0:0
+     100002.0    batch    biomolec   bio_lab          16    TIMEOUT     124:0
+""")
+            fname = f.name
+
+        try:
+            result = extractor.extract_sacct(fname)
+            assert len(result) == 2
+            assert result[0]["ExitCode"] == "0:0"
+            assert result[1]["ExitCode"] == "124:0"
+            assert result[1]["State"] == "E"  # TIMEOUT -> E
+        finally:
+            os.unlink(fname)
+
+
+class TestExpandSlurmNodelist:
+    """Tests for expand_slurm_nodelist helper function."""
+
+    def test_single_node(self):
+        """Test single node name is returned as-is."""
+        result = slurm.expand_slurm_nodelist("wn001")
+        assert result == ["wn001"]
+
+    def test_bracket_range(self):
+        """Test node range expansion with brackets."""
+        result = slurm.expand_slurm_nodelist("wn[001-003]")
+        assert result == ["wn001", "wn002", "wn003"]
+
+    def test_bracket_mixed(self):
+        """Test bracket notation with comma-separated range and single."""
+        result = slurm.expand_slurm_nodelist("wn[001-003,005]")
+        assert result == ["wn001", "wn002", "wn003", "wn005"]
+
+    def test_comma_separated(self):
+        """Test comma-separated nodes without brackets."""
+        result = slurm.expand_slurm_nodelist("node002,node003")
+        assert result == ["node002", "node003"]
+
+    def test_bracket_complex(self):
+        """Test complex bracket notation."""
+        result = slurm.expand_slurm_nodelist("wn[001,003,005-007]")
+        assert result == ["wn001", "wn003", "wn005", "wn006", "wn007"]
+
+    def test_pending_reason_parentheses(self):
+        """Test that pending reason strings in parentheses return empty."""
+        result = slurm.expand_slurm_nodelist("(Priority)")
+        assert result == []
+        result = slurm.expand_slurm_nodelist("(Resources)")
+        assert result == []
+
+    def test_empty_and_none(self):
+        """Test empty and None inputs return empty list."""
+        assert slurm.expand_slurm_nodelist("") == []
+        assert slurm.expand_slurm_nodelist(None) == []
